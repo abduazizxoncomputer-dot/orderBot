@@ -20,11 +20,12 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 CREATE TABLE IF NOT EXISTS orders (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id     INTEGER NOT NULL,
-    text        TEXT NOT NULL,
-    status      TEXT NOT NULL DEFAULT 'pending',
-    created_at  TEXT NOT NULL
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id           INTEGER NOT NULL,
+    text              TEXT NOT NULL,
+    status            TEXT NOT NULL DEFAULT 'pending',
+    group_message_id  INTEGER,
+    created_at        TEXT NOT NULL
 );
 """
 
@@ -36,6 +37,13 @@ def _now() -> str:
 async def init_db() -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.executescript(_SCHEMA)
+
+        # Eski (group_message_id ustunisiz) bazalarni migratsiya qilish
+        cursor = await db.execute("PRAGMA table_info(orders)")
+        columns = {row[1] for row in await cursor.fetchall()}
+        if "group_message_id" not in columns:
+            await db.execute("ALTER TABLE orders ADD COLUMN group_message_id INTEGER")
+
         await db.commit()
 
 
@@ -140,6 +148,15 @@ async def add_order(user_id: int, text: str) -> int:
         )
         await db.commit()
         return cursor.lastrowid
+
+
+async def set_order_group_message_id(order_id: int, group_message_id: int) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE orders SET group_message_id = ? WHERE id = ?",
+            (group_message_id, order_id),
+        )
+        await db.commit()
 
 
 async def get_pending_orders_by_text(post_text: str) -> list[dict]:

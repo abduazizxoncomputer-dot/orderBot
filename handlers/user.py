@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from config import GROUP_ID
-from database.db import add_order, add_user, get_post_by_text
+from database.db import add_order, add_user, get_post_by_text, set_order_group_message_id
 from keyboards.inline import go_to_order_kb, yes_no_kb
 from states.states import OrderStates
 from utils.links import build_post_link
@@ -57,13 +57,14 @@ async def order_confirm_yes(call: CallbackQuery, state: FSMContext, bot: Bot) ->
         await call.answer()
         return
 
-    await add_order(user_id=call.from_user.id, text=text)
+    order_id = await add_order(user_id=call.from_user.id, text=text)
 
     if GROUP_ID:
-        await bot.send_message(
+        group_msg = await bot.send_message(
             GROUP_ID,
             f"🆕 New order: <b>{html.escape(text)}</b>\n👤 User ID: <code>{call.from_user.id}</code>",
         )
+        await set_order_group_message_id(order_id, group_msg.message_id)
 
     await call.message.edit_text(
         "So'rovingiz qabul qilindi ✅. Kanalga joylanishi bilan sizga xabar beramiz."

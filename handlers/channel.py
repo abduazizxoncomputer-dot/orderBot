@@ -3,7 +3,7 @@ import logging
 from aiogram import Bot, F, Router
 from aiogram.types import Message
 
-from config import CHANNEL_ID
+from config import CHANNEL_ID, GROUP_ID
 from database.db import add_post, get_pending_orders_by_text, mark_order_fulfilled
 from keyboards.inline import go_to_order_kb
 from utils.links import build_post_link
@@ -39,5 +39,11 @@ async def on_new_channel_post(message: Message, bot: Bot) -> None:
             )
         except Exception as exc:  # user botni bloklagan yoki chat topilmagan bo'lishi mumkin
             logger.warning("Order %s uchun userga xabar yuborilmadi: %s", order["id"], exc)
-        finally:
-            await mark_order_fulfilled(order["id"])
+
+        if GROUP_ID and order.get("group_message_id"):
+            try:
+                await bot.delete_message(GROUP_ID, order["group_message_id"])
+            except Exception as exc:  # xabar allaqachon o'chirilgan bo'lishi mumkin
+                logger.warning("Guruhdagi order xabari o'chirilmadi (order %s): %s", order["id"], exc)
+
+        await mark_order_fulfilled(order["id"])
