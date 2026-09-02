@@ -34,7 +34,7 @@ async def on_new_channel_post(message: Message, bot: Bot) -> None:
         try:
             await bot.send_message(
                 order["user_id"],
-                "Siz so'ragan order kanalga joylandi!",
+                "The order you requested has been posted to the channel!",
                 reply_markup=kb,
             )
         except Exception as exc:  # user botni bloklagan yoki chat topilmagan bo'lishi mumkin

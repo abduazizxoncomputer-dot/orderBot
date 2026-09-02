@@ -19,8 +19,8 @@ async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     await add_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
     await message.answer(
-        "Salom! Kerakli order (film/post) nomini menga matn ko'rinishida yuboring, "
-        "men uni kanaldan qidirib beraman."
+        "Hi! Send me the name of the order (movie/post) you're looking for, "
+        "and I'll search the channel for it."
     )
 
 
@@ -34,7 +34,7 @@ async def handle_order_text(message: Message, state: FSMContext) -> None:
     if post:
         link = build_post_link(post["chat_id"], post["message_id"])
         await message.answer(
-            f"Topildi: <b>{html.escape(query_text)}</b>",
+            f"Found: <b>{html.escape(query_text)}</b>",
             reply_markup=go_to_order_kb(link),
         )
         return
@@ -42,7 +42,7 @@ async def handle_order_text(message: Message, state: FSMContext) -> None:
     await state.set_state(OrderStates.waiting_confirm)
     await state.update_data(pending_order_text=query_text)
     await message.answer(
-        f"\"{html.escape(query_text)}\" bazada topilmadi. Buyurtma qilmoqchimisiz?",
+        f"\"{html.escape(query_text)}\" was not found in the database. Would you like to place an order?",
         reply_markup=yes_no_kb(),
     )
 
@@ -67,7 +67,7 @@ async def order_confirm_yes(call: CallbackQuery, state: FSMContext, bot: Bot) ->
         await set_order_group_message_id(order_id, group_msg.message_id)
 
     await call.message.edit_text(
-        "So'rovingiz qabul qilindi ✅. Kanalga joylanishi bilan sizga xabar beramiz."
+        "Your request has been received ✅. We'll notify you once it's posted to the channel."
     )
     await call.answer()
 
@@ -75,5 +75,5 @@ async def order_confirm_yes(call: CallbackQuery, state: FSMContext, bot: Bot) ->
 @router.callback_query(OrderStates.waiting_confirm, F.data == "order_no")
 async def order_confirm_no(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await call.message.edit_text("Bekor qilindi.")
+    await call.message.edit_text("Cancelled.")
     await call.answer()

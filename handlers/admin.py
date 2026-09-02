@@ -22,8 +22,8 @@ router.callback_query.filter(F.from_user.id.in_(ADMIN_IDS))
 
 def _confirm_kb():
     builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Yuborish", callback_data="sendmsg_send")
-    builder.button(text="❌ Bekor qilish", callback_data="sendmsg_cancel")
+    builder.button(text="✅ Send", callback_data="sendmsg_send")
+    builder.button(text="❌ Cancel", callback_data="sendmsg_cancel")
     builder.adjust(2)
     return builder.as_markup()
 
@@ -33,7 +33,7 @@ async def cancel_any(message: Message, state: FSMContext) -> None:
     if await state.get_state() is None:
         return
     await state.clear()
-    await message.answer("Bekor qilindi.")
+    await message.answer("Cancelled.")
 
 
 def _preview(text: str, limit: int = 50) -> str:
@@ -50,27 +50,27 @@ async def cmd_db(message: Message) -> None:
     recent_orders = await get_recent_orders(10)
 
     lines = [
-        "<b>DB holati</b>",
-        f"Postlar: {stats['posts']}",
-        f"Userlar: {stats['users']}",
-        f"Orderlar: {stats['orders']} (kutilmoqda: {stats['orders_pending']}, bajarilgan: {stats['orders_fulfilled']})",
+        "<b>DB status</b>",
+        f"Posts: {stats['posts']}",
+        f"Users: {stats['users']}",
+        f"Orders: {stats['orders']} (pending: {stats['orders_pending']}, fulfilled: {stats['orders_fulfilled']})",
         "",
-        "<b>Oxirgi postlar (max 10):</b>",
+        "<b>Recent posts (max 10):</b>",
     ]
     if recent_posts:
         for p in recent_posts:
             lines.append(f"#{p['message_id']} — {_preview(p['text'])}")
     else:
-        lines.append("— yo'q —")
+        lines.append("— none —")
 
     lines.append("")
-    lines.append("<b>Oxirgi orderlar (max 10):</b>")
+    lines.append("<b>Recent orders (max 10):</b>")
     if recent_orders:
         for o in recent_orders:
             icon = "⏳" if o["status"] == "pending" else "✅"
             lines.append(f"{icon} [{o['user_id']}] {_preview(o['text'])}")
     else:
-        lines.append("— yo'q —")
+        lines.append("— none —")
 
     await message.answer("\n".join(lines))
 
@@ -100,21 +100,21 @@ def _parse_since(raw: str) -> str | None:
 
 
 async def _run_refresh_and_report(message: Message, bot: Bot, since_iso: str | None) -> None:
-    label = "barcha postlar" if since_iso is None else f"{since_iso} dan keyingi postlar"
-    status_msg = await message.answer(f"Yangilanmoqda ({label}), kuting...")
+    label = "all posts" if since_iso is None else f"posts since {since_iso}"
+    status_msg = await message.answer(f"Refreshing ({label}), please wait...")
 
     try:
         result = await sync_channel_posts(bot, since_iso)
     except RuntimeError as exc:
-        await status_msg.edit_text(f"Xato: {exc}")
+        await status_msg.edit_text(f"Error: {exc}")
         return
 
     await status_msg.edit_text(
-        "Yangilash yakunlandi ✅\n\n"
-        f"DB dagi postlar tekshirildi: {result['checked']} ta\n"
-        f"O'chirilgani aniqlanib bazadan tozalandi: {result['removed']} ta\n\n"
-        f"Kanaldan skanerlangan ID'lar: {result['scanned']} ta\n"
-        f"Bazaga yangi qo'shilgan postlar: {result['found']} ta"
+        "Refresh completed ✅\n\n"
+        f"DB posts checked: {result['checked']}\n"
+        f"Removed (deleted from channel): {result['removed']}\n\n"
+        f"Channel IDs scanned: {result['scanned']}\n"
+        f"New posts added to DB: {result['found']}"
     )
 
 
@@ -125,10 +125,10 @@ async def cmd_refresh(message: Message, command: CommandObject, state: FSMContex
             since_iso = _parse_since(command.args)
         except ValueError:
             await message.answer(
-                "Sana formati noto'g'ri. Namuna:\n"
+                "Invalid date format. Example:\n"
                 "<code>/refresh 2026-08-20 15:30</code>\n"
                 "<code>/refresh 2026-08-20</code>\n"
-                "<code>/refresh hammasi</code>"
+                "<code>/refresh all</code>"
             )
             return
         await _run_refresh_and_report(message, bot, since_iso)
@@ -136,11 +136,11 @@ async def cmd_refresh(message: Message, command: CommandObject, state: FSMContex
 
     await state.set_state(RefreshStates.waiting_datetime)
     await message.answer(
-        "DB qaysi sana-soatdan boshlab yangilansin?\n\n"
-        "Format: <code>YYYY-MM-DD HH:MM</code> (masalan: <code>2026-08-20 15:30</code>)\n"
-        "Sana-soat UTC bo'yicha kiritiladi.\n"
-        "Barcha postlarni tekshirish uchun <code>hammasi</code> deb yozing.\n"
-        "Bekor qilish uchun /cancel."
+        "From which date/time should the DB be refreshed?\n\n"
+        "Format: <code>YYYY-MM-DD HH:MM</code> (e.g. <code>2026-08-20 15:30</code>)\n"
+        "Date/time is in UTC.\n"
+        "Type <code>all</code> to check every post.\n"
+        "Send /cancel to cancel."
     )
 
 
@@ -150,8 +150,8 @@ async def refresh_get_datetime(message: Message, state: FSMContext, bot: Bot) ->
         since_iso = _parse_since(message.text)
     except ValueError:
         await message.answer(
-            "Format noto'g'ri. Namuna: <code>2026-08-20 15:30</code> yoki <code>hammasi</code>.\n"
-            "Qaytadan urinib ko'ring yoki /cancel yuboring."
+            "Invalid format. Example: <code>2026-08-20 15:30</code> or <code>all</code>.\n"
+            "Try again or send /cancel."
         )
         return
 
@@ -169,22 +169,22 @@ async def cmd_send_message(message: Message, command: CommandObject, state: FSMC
 
     await state.set_state(SendMessageStates.waiting_user_id)
     await message.answer(
-        "Xabar yuboriladigan userning Telegram user_id'sini kiriting.\n"
-        "(To'g'ridan-to'g'ri ham berish mumkin: <code>/send_message 123456789</code>)\n\n"
-        "user_id'ni guruhga tushgan \"New order\" xabaridan olishingiz mumkin.\n"
-        "Bekor qilish uchun /cancel."
+        "Enter the Telegram user_id of the recipient.\n"
+        "(You can also pass it directly: <code>/send_message 123456789</code>)\n\n"
+        "You can get the user_id from the \"New order\" message posted in the group.\n"
+        "Send /cancel to cancel."
     )
 
 
 async def _start_send_message_flow(message: Message, state: FSMContext, target_id: int) -> None:
     exists = await user_exists(target_id)
-    warning = "" if exists else "\n⚠️ Bu user hali botga /start bosmagan, xabar yetib bormasligi mumkin."
+    warning = "" if exists else "\n⚠️ This user hasn't pressed /start on the bot yet, the message may not be delivered."
 
     await state.update_data(target_user_id=target_id)
     await state.set_state(SendMessageStates.waiting_text)
     await message.answer(
-        f"Qabul qiluvchi: <code>{target_id}</code>{warning}\n\n"
-        "Xabar matnini kiriting.\nBekor qilish uchun /cancel."
+        f"Recipient: <code>{target_id}</code>{warning}\n\n"
+        "Enter the message text.\nSend /cancel to cancel."
     )
 
 
@@ -193,7 +193,7 @@ async def send_message_get_user_id(message: Message, state: FSMContext) -> None:
     raw = message.text.strip()
     if not raw.lstrip("-").isdigit():
         await message.answer(
-            "user_id faqat raqamlardan iborat bo'lishi kerak. Qaytadan urinib ko'ring yoki /cancel."
+            "user_id must contain digits only. Try again or send /cancel."
         )
         return
 
@@ -205,10 +205,10 @@ async def send_message_get_text(message: Message, state: FSMContext) -> None:
     await state.update_data(message_text=message.text)
     await state.set_state(SendMessageStates.waiting_button)
     await message.answer(
-        "Xabar ostiga tugma qo'shmoqchimisiz?\n\n"
-        "Qo'shish uchun quyidagi formatda yozing:\n"
-        "<code>Tugma matni | https://t.me/kanal_username/123</code>\n\n"
-        "Tugmasiz yuborish uchun /skip deb yozing."
+        "Would you like to add a button under the message?\n\n"
+        "To add one, use this format:\n"
+        "<code>Button text | https://t.me/channel_username/123</code>\n\n"
+        "Send /skip to send without a button."
     )
 
 
@@ -223,14 +223,14 @@ async def send_message_get_button(message: Message, state: FSMContext) -> None:
     raw = message.text
     if "|" not in raw:
         await message.answer(
-            "Format noto'g'ri. Namuna: <code>Tugma matni | https://t.me/kanal/123</code>\n"
-            "Yoki tugmasiz yuborish uchun /skip yuboring."
+            "Invalid format. Example: <code>Button text | https://t.me/channel/123</code>\n"
+            "Or send /skip to send without a button."
         )
         return
 
     btn_text, btn_url = (part.strip() for part in raw.split("|", 1))
     if not btn_url.startswith("http"):
-        await message.answer("Havola http/https bilan boshlanishi kerak. Qaytadan urinib ko'ring.")
+        await message.answer("The link must start with http/https. Try again.")
         return
 
     await state.update_data(button_text=btn_text, button_url=btn_url)
@@ -241,9 +241,9 @@ async def _show_send_message_preview(message: Message, state: FSMContext) -> Non
     data = await state.get_data()
     await state.set_state(SendMessageStates.confirm)
 
-    preview = f"Qabul qiluvchi: <code>{data['target_user_id']}</code>\n\nXabar matni:\n\n{data['message_text']}"
+    preview = f"Recipient: <code>{data['target_user_id']}</code>\n\nMessage text:\n\n{data['message_text']}"
     if data.get("button_url"):
-        preview += f"\n\nTugma: {data['button_text']} -> {data['button_url']}"
+        preview += f"\n\nButton: {data['button_text']} -> {data['button_url']}"
 
     await message.answer(preview, reply_markup=_confirm_kb())
 
@@ -251,7 +251,7 @@ async def _show_send_message_preview(message: Message, state: FSMContext) -> Non
 @router.callback_query(SendMessageStates.confirm, F.data == "sendmsg_cancel")
 async def send_message_cancel(call: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
-    await call.message.edit_text("Xabar yuborish bekor qilindi.")
+    await call.message.edit_text("Message sending cancelled.")
     await call.answer()
 
 
@@ -273,9 +273,9 @@ async def send_message_send(call: CallbackQuery, state: FSMContext, bot: Bot) ->
 
     try:
         await bot.send_message(target_id, text, reply_markup=reply_markup)
-        await call.message.edit_text(f"Yuborildi ✅ (user_id: <code>{target_id}</code>)")
+        await call.message.edit_text(f"Sent ✅ (user_id: <code>{target_id}</code>)")
     except Exception as exc:
-        logger.warning("Xabar %s ga yuborilmadi: %s", target_id, exc)
-        await call.message.edit_text(f"Xato ❌: xabar yuborilmadi.\n<code>{html.escape(str(exc))}</code>")
+        logger.warning("Message to %s failed: %s", target_id, exc)
+        await call.message.edit_text(f"Error ❌: message not sent.\n<code>{html.escape(str(exc))}</code>")
 
     await call.answer()
