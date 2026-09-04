@@ -25,6 +25,7 @@ ADMIN_COMMANDS = DEFAULT_COMMANDS + [
     BotCommand(command="db", description="Show database stats"),
     BotCommand(command="refresh", description="Refresh posts from the channel"),
     BotCommand(command="send_message", description="Send a message to a user"),
+    BotCommand(command="broadcast", description="Send a message to everyone"),
     BotCommand(command="cancel", description="Cancel the current action"),
 ]
 

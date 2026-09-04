@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import html
 import logging
@@ -9,7 +10,7 @@ from aiogram.types import CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from config import ADMIN_IDS
-from database.db import get_recent_orders, get_recent_posts, get_stats, user_exists
+from database.db import get_all_users, get_recent_orders, get_recent_posts, get_stats, user_exists
 from services.deleted_posts import sync_channel_posts
 from states.states import RefreshStates, SendMessageStates
 
@@ -176,11 +177,22 @@ async def cmd_send_message(message: Message, command: CommandObject, state: FSMC
     )
 
 
+@router.message(Command("broadcast"))
+async def cmd_broadcast(message: Message, state: FSMContext) -> None:
+    user_count = len(await get_all_users())
+    await state.update_data(target_user_id=None, is_broadcast=True)
+    await state.set_state(SendMessageStates.waiting_text)
+    await message.answer(
+        f"This message will be sent to ALL users who started the bot ({user_count} users).\n\n"
+        "Enter the message text.\nSend /cancel to cancel."
+    )
+
+
 async def _start_send_message_flow(message: Message, state: FSMContext, target_id: int) -> None:
     exists = await user_exists(target_id)
     warning = "" if exists else "\n⚠️ This user hasn't pressed /start on the bot yet, the message may not be delivered."
 
-    await state.update_data(target_user_id=target_id)
+    await state.update_data(target_user_id=target_id, is_broadcast=False)
     await state.set_state(SendMessageStates.waiting_text)
     await message.answer(
         f"Recipient: <code>{target_id}</code>{warning}\n\n"
@@ -241,7 +253,12 @@ async def _show_send_message_preview(message: Message, state: FSMContext) -> Non
     data = await state.get_data()
     await state.set_state(SendMessageStates.confirm)
 
-    preview = f"Recipient: <code>{data['target_user_id']}</code>\n\nMessage text:\n\n{data['message_text']}"
+    if data.get("is_broadcast"):
+        recipient_line = "Recipient: <b>ALL USERS</b>"
+    else:
+        recipient_line = f"Recipient: <code>{data['target_user_id']}</code>"
+
+    preview = f"{recipient_line}\n\nMessage text:\n\n{data['message_text']}"
     if data.get("button_url"):
         preview += f"\n\nButton: {data['button_text']} -> {data['button_url']}"
 
@@ -260,7 +277,6 @@ async def send_message_send(call: CallbackQuery, state: FSMContext, bot: Bot) ->
     data = await state.get_data()
     await state.clear()
 
-    target_id = data["target_user_id"]
     text = data["message_text"]
     button_text = data.get("button_text")
     button_url = data.get("button_url")
@@ -271,6 +287,25 @@ async def send_message_send(call: CallbackQuery, state: FSMContext, bot: Bot) ->
         builder.button(text=button_text, url=button_url)
         reply_markup = builder.as_markup()
 
+    if data.get("is_broadcast"):
+        await call.message.edit_text("Broadcasting, please wait...")
+
+        user_ids = await get_all_users()
+        sent, failed = 0, 0
+        for user_id in user_ids:
+            try:
+                await bot.send_message(user_id, text, reply_markup=reply_markup)
+                sent += 1
+            except Exception as exc:
+                failed += 1
+                logger.info("Broadcast to %s failed: %s", user_id, exc)
+            await asyncio.sleep(0.05)  # Telegram flood-limitidan qochish uchun
+
+        await call.message.answer(f"Broadcast finished ✅\nSent: {sent}\nFailed: {failed}")
+        await call.answer()
+        return
+
+    target_id = data["target_user_id"]
     try:
         await bot.send_message(target_id, text, reply_markup=reply_markup)
         await call.message.edit_text(f"Sent ✅ (user_id: <code>{target_id}</code>)")
